@@ -19,3 +19,5 @@ def theory_of_mind():
         scorer=model_graded_fact()
     )
 
+
+print("Hello")
