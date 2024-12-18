@@ -20,4 +20,3 @@ def theory_of_mind():
     )
 
 
-print("Hello")
