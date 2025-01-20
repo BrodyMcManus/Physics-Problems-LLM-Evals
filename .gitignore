@@ -3,3 +3,8 @@ CSC108/w02_markus.py
 CSC108/TestModule.py
 CSC108/TestModule.cpython-310.pyc
 CSC108/TestCode.py
+
+.env
+logs/
+__pycache__/
+test.py
