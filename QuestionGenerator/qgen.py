@@ -106,7 +106,9 @@ def generate_uniform_distractors(
     
     lower_bound = mean - 3 * stdev
     upper_bound = mean + 3 * stdev
-    
+    # Decide if we allow negative distractors or not
+    allow_negative = any(opt < 0 for opt in original_options)
+
     distractors = set()
     max_attempts = how_many * max_attempts_factor
     attempts = 0
@@ -115,8 +117,8 @@ def generate_uniform_distractors(
         candidate = random.uniform(lower_bound, upper_bound)
         attempts += 1
         
-        # Skip negative if your domain disallows negatives
-        if candidate < 0:
+        # If all originals are >= 0, we skip negatives
+        if (not allow_negative) and (candidate < 0):
             continue
         
         # Format to desired decimal places
@@ -129,13 +131,14 @@ def generate_uniform_distractors(
         
         distractors.add(candidate_val)
     
+    # Convert them all to the string form with final formatting
     final_list = [f"{val:.{max_decimals}f}" for val in distractors]
     
-    # If we can't get enough after max_attempts, raise error or return partial
+    # If we can't get enough after max_attempts
     if len(final_list) < how_many:
         raise ValueError(
             f"Could not generate {how_many} unique distractors. "
-            f"Got {len(final_list)} after {attempts} attempts. "
+            f"Got {len(final_list)} after {attempts} attempts. Possibly too many constraints."
             "Try increasing max_attempts_factor or adjusting the logic."
             f"The original options were {original_options} with standard deviation {stdev}"
         )
@@ -237,8 +240,8 @@ def write_expanded_numeric_questions_to_csv(expanded_questions, output_file_path
 
 def main():
     input_csv = 'Physics Test Questions.csv'
-    output_csv = '1000_expanded_questions.csv'
-    desired_num_answers = 1000  # for example
+    output_csv = '20_expanded_questions.csv'
+    desired_num_answers = 20  # for example
     
     expanded_data = generate_expanded_quiz_numeric(input_csv, desired_num_answers)
     write_expanded_numeric_questions_to_csv(expanded_data, output_csv)
