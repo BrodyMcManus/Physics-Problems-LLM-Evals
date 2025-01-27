@@ -1,217 +1,221 @@
 import csv
 import random
 import statistics
+import math
 from decimal import Decimal
-
-def all_options_are_integers(options):
-    """
-    Returns True if every value in 'options' is effectively an integer,
-    e.g., 3.0 -> True, 3.1 -> False.
-    """
-    return all(x.is_integer() for x in options)
-
-def get_max_decimal_places(values):
-    """
-    For a list of floats, returns the maximum number of decimal places among them.
-    E.g. [5.0, 3.141, 3.14] -> 3 because 3.141 has 3 decimals.
-    """
-    max_dp = 0
-    for v in values:
-        # Convert to string, then to a Decimal to inspect its exponent
-        dec = Decimal(str(v)).normalize()
-        # dec.as_tuple().exponent is negative if there's a decimal part.
-        # E.g. "3.141" -> exponent = -3 => 3 decimal places
-        dp = max(0, -dec.as_tuple().exponent)
-        if dp > max_dp:
-            max_dp = dp
-    return max_dp
 
 def read_numeric_questions_from_csv(csv_file_path):
     """
-    Reads a CSV of questions where each row has:
+    Reads a CSV where each row has:
        Question, OptionA, OptionB, OptionC, OptionD, CorrectAnswer
-
-    - OptionA/B/C/D are numeric strings (e.g., "3.14", "10")
-    - CorrectAnswer is one of "A", "B", "C", or "D"
-
-    Returns a list of dicts:
-       {
-         'question': <str>,
-         'options': [float, float, float, float],
-         'correct_answer': float
-       }
+    with OptionA/B/C/D as numeric strings, and CorrectAnswer as one
+    of "A", "B", "C", or "D". Returns a list of dicts.
     """
     questions_data = []
     
     with open(csv_file_path, mode='r', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            # Parse the four options as floats
             option_a = float(row['OptionA'])
             option_b = float(row['OptionB'])
             option_c = float(row['OptionC'])
             option_d = float(row['OptionD'])
             
-            # CorrectAnswer column contains "A", "B", "C", or "D"
-            correct_answer_letter = row['CorrectAnswer'].strip().upper()
-            
-            # Determine the correct numeric value
-            if correct_answer_letter == "A":
+            correct_letter = row['CorrectAnswer'].strip().upper()
+            if correct_letter == "A":
                 correct_ans = option_a
-            elif correct_answer_letter == "B":
+            elif correct_letter == "B":
                 correct_ans = option_b
-            elif correct_answer_letter == "C":
+            elif correct_letter == "C":
                 correct_ans = option_c
-            elif correct_answer_letter == "D":
+            elif correct_letter == "D":
                 correct_ans = option_d
             else:
                 raise ValueError(
-                    f"CorrectAnswer must be one of 'A', 'B', 'C', or 'D'. "
-                    f"Got '{correct_answer_letter}' instead."
+                    f"CorrectAnswer must be one of A, B, C, or D. Got {correct_letter}"
                 )
             
-            question_entry = {
+            questions_data.append({
                 'question': row['Question'],
                 'options': [option_a, option_b, option_c, option_d],
                 'correct_answer': correct_ans
-            }
-            questions_data.append(question_entry)
-    
+            })
     return questions_data
 
-def generate_gaussian_distractors(all_4_options, correct_answer, how_many):
+def get_max_decimals_in_original(options):
     """
-    Generates 'how_many' distractors via a Gaussian distribution whose mean and stdev
-    are computed from the 4 original options (including the correct answer).
-
-    Key rules:
-      - Skip negative values (candidate < 0).
-      - If all original options are integers, round final distractors to int.
-      - Otherwise, keep them as float.
-      - Skip if candidate == correct_answer.
-      - It is OK if candidate == one of the original distractors (besides correct answer).
+    Returns the max number of decimal places that appear among the given floats.
+    E.g., [3.14, 2.5, 5.0001] -> 4
     """
-    # Check if we want integer-only or float
-    integer_only = all_options_are_integers(all_4_options)
+    max_dp = 0
+    for val in options:
+        dec = Decimal(str(val)).normalize()
+        # dec.as_tuple().exponent is negative if there's a decimal part
+        # e.g. "3.1415" -> exponent=-4 => 4 decimals
+        exponent = dec.as_tuple().exponent
+        if exponent < 0:
+            dp = -exponent
+            if dp > max_dp:
+                max_dp = dp
+    return max_dp
 
-    mean = statistics.mean(all_4_options)
-    unique_values = set(all_4_options)
+def get_decimal_places_for_question(original_options, N):
+    """
+    Computes how many decimal places we will use for this question.
+    1) The max decimal places in the original 4 options.
+    2) The log10(N) + 2 approach to ensure we can handle large N.
+    Returns max of these two values.
+    """
+    # 1) decimal places from the original data
+    original_dp = get_max_decimals_in_original(original_options)
     
-    # If all 4 are the same, stdev = 0.0; fallback to stdev=1.0
-    if len(unique_values) > 1:
-        stdev = statistics.stdev(all_4_options)
+    # 2) decimal places from the desired N
+    if N <= 1:
+        n_dp = 0
     else:
-        stdev = 0.0
-    if stdev == 0.0:
-        stdev = 1.0
-
-    distractors = set()
+        n_dp = int(math.floor(math.log10(N))) + 3
     
-    while len(distractors) < how_many:
-        candidate = random.gauss(mean, stdev)
+    return max(original_dp, n_dp)
 
-        # Skip negative values
+def generate_uniform_distractors(
+    original_options,
+    correct_answer,
+    how_many,
+    max_decimals,
+    max_attempts_factor=1000
+):
+    """
+    Generates 'how_many' float distractors by uniformly sampling from
+    [mean - 3*stdev,  mean + 3*stdev].
+    
+    - If all original options are identical or stdev=0, fall back to stdev=1.0.
+    - We skip negative values (if you need that domain).
+    - We skip exact correct values.
+    - We format the final distractors to 'max_decimals' decimals.
+    - 'max_attempts_factor' helps prevent infinite loops.
+    """
+    mean = statistics.mean(original_options)
+    
+    # If stdev is 0 => fallback
+    if len(set(original_options)) == 1:
+        stdev = 1.0
+    else:
+        stdev = statistics.stdev(original_options)
+        if stdev == 0.0:
+            stdev = 1.0
+    
+    lower_bound = mean - 3 * stdev
+    upper_bound = mean + 3 * stdev
+    
+    distractors = set()
+    max_attempts = how_many * max_attempts_factor
+    attempts = 0
+    
+    while len(distractors) < how_many and attempts < max_attempts:
+        candidate = random.uniform(lower_bound, upper_bound)
+        attempts += 1
+        
+        # Skip negative if your domain disallows negatives
         if candidate < 0:
             continue
         
-        # If we want integers, round
-        if integer_only:
-            candidate = int(round(candidate))
+        # Format to desired decimal places
+        candidate_str = f"{candidate:.{max_decimals}f}"
+        candidate_val = float(candidate_str)
         
-        # Skip if it's exactly the correct answer
-        if candidate == correct_answer:
+        # Skip if it's effectively the correct answer after rounding
+        if abs(candidate_val - correct_answer) < 1e-14:
             continue
         
-        distractors.add(candidate)
+        distractors.add(candidate_val)
     
-    return list(distractors)
+    final_list = [f"{val:.{max_decimals}f}" for val in distractors]
+    
+    # If we can't get enough after max_attempts, raise error or return partial
+    if len(final_list) < how_many:
+        raise ValueError(
+            f"Could not generate {how_many} unique distractors. "
+            f"Got {len(final_list)} after {attempts} attempts. "
+            "Try increasing max_attempts_factor or adjusting the logic."
+            f"The original options were {original_options} with standard deviation {stdev}"
+        )
+    
+    # Return exactly how_many
+    return final_list[:how_many]
 
 def expand_numeric_answers_for_question(question_data, N):
     """
-    Returns a list of N answers (formatted as strings):
-      1) The correct answer from the CSV
-      2) (N-1) newly generated Gaussian distractors (not automatically including any original distractors)
+    Produces N answers for a question:
+      - 1 correct answer
+      - (N-1) newly generated distractors (floats, up to some decimal precision).
+    
+    We do NOT rely on "all options integer." We always use floats, with decimal 
+    precision determined by N.
     """
     correct_answer = question_data['correct_answer']
-    original_options = question_data['options']  # includes correct answer
-
-    # Decide how many distractors we need
+    original_options = question_data['options']  # includes correct
     M = N - 1
-
-    # Generate all M distractors from Gaussian distribution
-    new_distractors = generate_gaussian_distractors(
-        all_4_options=original_options,
-        correct_answer=correct_answer,
-        how_many=M
-    )
-
-    # Combine correct answer + newly generated distractors
-    all_answers = [correct_answer] + new_distractors
-    #change positions of answers so correct answer is not always first
-    random.shuffle(all_answers)
-
-    # Determine if we should format everything as integers or floats
-    if not all_options_are_integers(original_options):
-        # If at least one original option had decimals, find the max decimal places
-        max_decimals = get_max_decimal_places(original_options)
-        # Format all answers to that decimal precision
-        all_answers_formatted = [f"{val:.{max_decimals}f}" for val in all_answers]
-    else:
-        # Otherwise, keep them as integers
-        all_answers_formatted = [str(int(val)) for val in all_answers]
     
-    return all_answers_formatted
+    # Decide how many decimal places
+    max_decimals = get_decimal_places_for_question(original_options, N)
+    
+    # Generate M distractors from uniform distribution
+    new_distractors = generate_uniform_distractors(
+        original_options=original_options,
+        correct_answer=correct_answer,
+        how_many=M,
+        max_decimals=max_decimals
+    )
+    
+    # Combine correct answer + distractors
+    # We'll format the correct answer to the same decimal places
+    correct_formatted = f"{correct_answer:.{max_decimals}f}"
+    all_answers = [correct_formatted] + new_distractors
+    random.shuffle(all_answers)
+    
+    return all_answers
 
 def generate_expanded_quiz_numeric(csv_file_path, N):
     """
     1) Reads numeric questions from CSV.
-    2) For each question, we produce N answers: 
-       - The correct answer
-       - (N-1) newly generated Gaussian distractors
-    3) Returns a list of dicts with final formatted strings:
-       {
-         'question': <str>,
-         'correct_answer': <str>,
-         'answers': [<str>, <str>, ...]
-       }
+    2) For each question, produce N answers (1 correct, N-1 distractors).
+    3) Returns a list of dicts with the final data.
     """
     questions_data = read_numeric_questions_from_csv(csv_file_path)
-    
     expanded_questions = []
+    
     for q in questions_data:
         expanded_answers = expand_numeric_answers_for_question(q, N)
         
-        # Format the correct answer the same way we formatted the rest
-        # If the question is integer-based, correct_answer is an int
-        # Otherwise, correct_answer is float with max_decimals from original
-        if not all_options_are_integers(q['options']):
-            max_decimals = get_max_decimal_places(q['options'])
-            correct_answer_formatted = f"{q['correct_answer']:.{max_decimals}f}"
-        else:
-            correct_answer_formatted = str(int(q['correct_answer']))
+        # The correct answer in 'q' is a float; format it to the same decimal 
+        # as the expanded answers used. 
+        # Actually, we already did that in expand_numeric_answers_for_question, 
+        # so let's just identify it from that list or store it separately.
+        
+        # We can store the correct one in the same format as well:
+        max_decimals = get_decimal_places_for_question(q['options'], N)
+        correct_answer_str = f"{q['correct_answer']:.{max_decimals}f}"
         
         expanded_questions.append({
             'question': q['question'],
-            'correct_answer': correct_answer_formatted,
-            'answers': expanded_answers  # This includes the correct answer in random position
+            'correct_answer': correct_answer_str,
+            'answers': expanded_answers
         })
     
     return expanded_questions
 
 def write_expanded_numeric_questions_to_csv(expanded_questions, output_file_path):
     """
-    Writes the expanded questions to a CSV with columns in this order:
-       question, answer_1, answer_2, ..., answer_n, correct_answer
+    Writes the expanded questions to a CSV with columns:
+      question, answer_1, ..., answer_M, correct_answer (in the last column).
     """
     import csv
-    
-    # Determine the maximum number of answers in any question
+
     max_answers = max(len(item['answers']) for item in expanded_questions)
     
-    # We want:
-    #   question  | answer_1 | ... | answer_n | correct_answer
+    # We want "question", then answer_1..answer_k, then correct_answer
     fieldnames = (
-        ["question"] + 
+        ["question"] +
         [f"answer_{i+1}" for i in range(max_answers)] +
         ["correct_answer"]
     )
@@ -221,27 +225,26 @@ def write_expanded_numeric_questions_to_csv(expanded_questions, output_file_path
         writer.writeheader()
         
         for item in expanded_questions:
-            row_data = {}
-            row_data["question"] = item["question"]
+            row_data = {"question": item["question"]}
             
-            # Fill in each answer (these are the distractors + correct answer in random order)
+            # Fill answers
             for i, ans in enumerate(item["answers"]):
                 row_data[f"answer_{i+1}"] = ans
             
-            # Lastly, put the correct answer in the final column
+            # Then correct in last column
             row_data["correct_answer"] = item["correct_answer"]
-            
             writer.writerow(row_data)
 
 def main():
     input_csv = 'Physics Test Questions.csv'
-    output_csv = 'modified_test_questions1000.csv'
-    desired_num_answers = 1000  # e.g., 1 correct + 5 distractors
-
+    output_csv = '1000_expanded_questions.csv'
+    desired_num_answers = 1000  # for example
+    
     expanded_data = generate_expanded_quiz_numeric(input_csv, desired_num_answers)
     write_expanded_numeric_questions_to_csv(expanded_data, output_csv)
 
 if __name__ == "__main__":
     main()
+
 
 
