@@ -122,9 +122,6 @@ def generate_gaussian_distractors(all_4_options, correct_answer, how_many):
         if candidate == correct_answer:
             continue
         
-        # It's now OK if candidate matches an original distractor or other original option
-        # so we do NOT skip those.
-        
         distractors.add(candidate)
     
     return list(distractors)
@@ -142,7 +139,6 @@ def expand_numeric_answers_for_question(question_data, N):
     M = N - 1
 
     # Generate all M distractors from Gaussian distribution
-    # (No original distractors are automatically included.)
     new_distractors = generate_gaussian_distractors(
         all_4_options=original_options,
         correct_answer=correct_answer,
@@ -151,6 +147,7 @@ def expand_numeric_answers_for_question(question_data, N):
 
     # Combine correct answer + newly generated distractors
     all_answers = [correct_answer] + new_distractors
+    #change positions of answers so correct answer is not always first
     random.shuffle(all_answers)
 
     # Determine if we should format everything as integers or floats
@@ -238,8 +235,8 @@ def write_expanded_numeric_questions_to_csv(expanded_questions, output_file_path
 
 def main():
     input_csv = 'Physics Test Questions.csv'
-    output_csv = 'modified_test_questions.csv'
-    desired_num_answers = 10  # e.g., 1 correct + 5 distractors
+    output_csv = 'modified_test_questions1000.csv'
+    desired_num_answers = 1000  # e.g., 1 correct + 5 distractors
 
     expanded_data = generate_expanded_quiz_numeric(input_csv, desired_num_answers)
     write_expanded_numeric_questions_to_csv(expanded_data, output_csv)
