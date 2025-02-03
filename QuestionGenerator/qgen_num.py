@@ -237,8 +237,8 @@ def write_expanded_numeric_questions_to_csv(expanded_questions, output_file_path
 
 def main():
     input_csv = 'Physics Test Questions.csv'
-    output_csv = '1000_expanded_questions.csv'
-    desired_num_answers = 1000  # for example
+    output_csv = '10v1.csv'
+    desired_num_answers = 10  # for example
     
     expanded_data = generate_expanded_quiz_numeric(input_csv, desired_num_answers)
     write_expanded_numeric_questions_to_csv(expanded_data, output_csv)
@@ -246,5 +246,9 @@ def main():
 if __name__ == "__main__":
     main()
 
-
+#This implementation relies on generating distractors by increasing the number of decimal
+#places available within the sampling bounds. This produces distractors that all have
+#decimal places, but where the correct answer option does not have matching decimal places.
+#The test which may be interesting is to see if a model can pick out this feature to select
+#the right answer. 
 
