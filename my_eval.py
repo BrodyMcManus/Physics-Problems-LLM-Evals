@@ -1,82 +1,158 @@
-from inspect_ai import Task, task
-from inspect_ai.dataset import Sample, csv_dataset
-from inspect_ai.scorer import choice
-from inspect_ai.solver import multiple_choice, system_message, prompt_template, generate
+# custom_mc_eval.py
+#
+# This script defines an Inspect task that reads multiple-choice questions
+# from a CSV file and evaluates the Gemini 1.5 Flash model.
+#
+# The CSV file is expected to have a header with columns like:
+#
+#   Question,OptionAA,OptionAB,OptionAC,...,OptionDV,CorrectAnswer
+#
+# The CorrectAnswer column holds the answer label exactly as in the header
+# (for example, "BK"). This custom solution extracts those labels from the
+# header and uses them when formatting the prompt.
+#
+# To run:
+#   pip install inspect-ai
+#   inspect eval custom_mc_eval.py --model google/gemini-1.5-flash
+#
 
-# A system message instructing the model to provide its reasoning
-SYSTEM_MESSAGE = (
-    "Please provide a step-by-step explanation of your reasoning "
-    "and then select the correct option."
-)
+import re
+from inspect_ai import Task, task, eval
+from inspect_ai.dataset import csv_dataset, Sample
+from inspect_ai.solver import solver, chain_of_thought
+from inspect_ai.scorer import Score, CORRECT, INCORRECT, scorer, accuracy, stderr
 
-# A prompt template that instructs the model explicitly to show its chain-of-thought.
-CO_T_PROMPT = """
-Solve the following problem step by step.
-{prompt}
-
-Make sure that your response ends with your final answer on a new line in the form:
-ANSWER: X
-where X is one of the options (A, B, C, etc.).
-""".strip()
-
-def record_to_sample(record):
+# -------------------------------------------------------------------------------
+def record_to_sample(record: dict) -> Sample:
     """
-    Converts a CSV record to an Inspect‑AI Sample.
-
-    Assumes the CSV has at least the following columns:
-      - Question
-      - Option... (one or more columns with keys that begin with "Option")
-      - CorrectAnswer (a letter, e.g., "A")
+    Convert a CSV row (a dict) into an Inspect Sample.
     
-    This function automatically extracts all option columns (sorted by key),
-    uses the question as input, the correct answer letter as the target,
-    and the list of options as the choices.
+    Expected CSV header columns:
+      - "Question": The question text.
+      - "Option..." columns: All answer choices (e.g. OptionAA, OptionAB, …).
+      - "CorrectAnswer": The correct answer label as recorded (e.g. "BK").
+    
+    This function extracts the labels from the CSV header (by removing the
+    "Option" prefix) and stores them in sample.metadata["option_labels"].
+    It also cleans each cell by removing any pre-existing label from its text.
     """
-    # Extract question text.
-    question = record.get("Question", "").strip()
+    question = record["Question"]
+    # Get all option column keys and sort them.
+    option_keys = sorted([key for key in record.keys() if key.startswith("Option")])
+    # Extract labels from the header, e.g. "OptionAA" -> "AA"
+    labels = [key[len("Option"):] for key in option_keys]
+    
+    raw_choices = [record[key].strip() for key in option_keys]
+    cleaned_choices = []
+    # Remove any leading label pattern from the cell text.
+    pattern = r"^\s*[A-Za-z]{1,3}\)\s*(.*)$"
+    for choice in raw_choices:
+        m = re.match(pattern, choice)
+        if m:
+            cleaned_choices.append(m.group(1).strip())
+        else:
+            cleaned_choices.append(choice)
+    
+    correct = record["CorrectAnswer"].strip()
+    sample = Sample(input=question, choices=cleaned_choices, target=correct)
+    # Store the extracted labels in metadata for our custom solver.
+    sample.metadata = {"option_labels": labels}
+    return sample
 
-    # Find all keys that start with "Option", sort them by the part after "Option"
-    option_keys = [k for k in record.keys() if k.startswith("Option")]
-    option_keys.sort(key=lambda k: k[len("Option"):])
-    choices = [record[k].strip() for k in option_keys if record[k].strip()]
+# -------------------------------------------------------------------------------
+@scorer(metrics=[accuracy(), stderr()])
+def choice_with_cot():
+    """
+    Custom scorer that extracts the chain-of-thought and final answer from the model output.
+    Expects output in the format:
+      Chain-of-thought:
+      <your reasoning here>
+      ANSWER: <option label>
+    """
+    async def score(state, target):
+        output = state.output.completion.strip()
+        pattern = r"Chain-of-thought:\s*(?P<cot>.*?)\s*[\r\n]+ANSWER:\s*(?P<ans>[A-Z]+)"
+        match = re.search(pattern, output, re.DOTALL)
+        if match:
+            final_ans = match.group("ans").strip()
+            cot_text = match.group("cot").strip()
+        else:
+            tokens = output.split()
+            final_ans = tokens[-1] if tokens else ""
+            cot_text = ""
+        is_correct = (final_ans == target.text)
+        return Score(
+            value=CORRECT if is_correct else INCORRECT,
+            answer=final_ans,
+            explanation=f"Chain-of-thought:\n{cot_text}\n\nFull output:\n{output}"
+        )
+    return score
 
-    # The target is read from the CorrectAnswer column.
-    target = record.get("CorrectAnswer", "").strip().upper()
+# -------------------------------------------------------------------------------
+@solver
+def custom_multiple_choice(template: str = None, cot: bool = True):
+    """
+    Custom multiple-choice solver that uses the option labels stored in the sample's metadata.
+    It builds the choices string using the labels extracted from the CSV header.
+    
+    Instead of using auto-generated labels, it uses the labels from sample.metadata["option_labels"].
+    If a custom template is not provided, a default prompt is constructed.
+    """
+    async def solve(state, generate):
+        # Access the original question from the user prompt text.
+        question = state.user_prompt.text  # This is our original question text.
+        choices = state.choices           # These should be the cleaned choice strings.
+        labels = state.metadata.get("option_labels")
+        if not labels or len(labels) != len(choices):
+            # Fallback: generate labels A, B, C, ... if metadata is missing.
+            labels = [chr(65 + i) for i in range(len(choices))]
+        
+        # Convert each choice into a simple string.
+        def format_choice(choice):
+            return choice.value if hasattr(choice, "value") else str(choice)
+        
+        # Build the choices string using the labels from the CSV.
+        formatted_choices = "\n".join(f"{label}) {format_choice(choice)}" 
+                                       for label, choice in zip(labels, choices))
+        
+        if template is None:
+            prompt = (
+                f"Question: {question}\n\n"
+                f"Choices:\n{formatted_choices}\n\n"
+                "Please provide your reasoning step-by-step. At the end, on a new line, output your final answer in the following format:\n"
+                "Chain-of-thought:\n<your reasoning here>\nANSWER: <option label>\n"
+                "Note: The final answer must be exactly one of the provided option labels."
+            )
+        else:
+            prompt = template.format(question=question, choices=formatted_choices)
+        
+        # Update the first user message with our constructed prompt.
+        state.user_prompt.text = prompt
+        return await generate(state)
+    return solve
 
-    return Sample(
-        input=question,
-        target=target,
-        choices=choices,
-        metadata={"source_id": record.get("id", "")}
-    )
-
+# -------------------------------------------------------------------------------
 @task
-def my_evaluation_with_reasoning():
+def custom_mc_csv_eval():
     """
-    This task loads your CSV of multiple-choice questions and evaluates gemini-flash-1.5.
+    Define a task that:
+      - Loads multiple-choice questions from a CSV file.
+      - Uses chain-of-thought prompting so that the model outputs its reasoning.
+      - Uses our custom multiple-choice solver that labels options based on the CSV header.
+      - Grades the answer using our custom scorer that extracts the chain-of-thought.
+    """
+    dataset = csv_dataset("100v2_alp.csv", sample_fields=record_to_sample)
     
-    It instructs the model to produce a chain-of-thought reasoning followed by the final answer.
-    The CSV is assumed to have columns: Question, Option..., CorrectAnswer.
-    """
-    # Load the dataset from your CSV file.
-    dataset = csv_dataset(
-        "26v2_alp.csv",  # adjust path as needed
-        delimiter=",",
-        sample_fields=record_to_sample
-    )
-
-    # Build the Task.
     return Task(
         dataset=dataset,
         solver=[
-            system_message(SYSTEM_MESSAGE),
-            # Use a prompt template that includes chain-of-thought instructions.
-            prompt_template(CO_T_PROMPT),
-            # Call generate() so that the model produces a full chain-of-thought.
-            generate(),
-            # Then use the multiple_choice() solver to help select a final answer.
-            multiple_choice()
+            chain_of_thought(),  # (Optional) Additional chain-of-thought prompt component.
+            custom_multiple_choice(cot=True)
         ],
-        scorer=choice()  # This scorer compares the final answer letter with the target.
+        scorer=choice_with_cot()
     )
 
+# -------------------------------------------------------------------------------
+if __name__ == "__main__":
+    # Run the evaluation on the Gemini 1.5 Flash model.
+    eval(custom_mc_csv_eval(), model="google/gemini-1.5-flash")
