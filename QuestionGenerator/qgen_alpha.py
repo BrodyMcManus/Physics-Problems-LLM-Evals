@@ -4,6 +4,26 @@ import statistics
 import math
 from decimal import Decimal
 
+def get_label_length(n):
+    length = 1
+    while 26**length < n:
+        length += 1
+    return length
+
+def index_to_label(idx, length):
+    chars = []
+    for _ in range(length):
+        digit = idx % 26
+        char = chr(ord('A') + digit)
+        chars.append(char)
+        idx //= 26
+    return ''.join(reversed(chars))
+
+def generate_labels(n):
+    length = get_label_length(n)
+    return [index_to_label(i, length) for i in range(n)]
+
+
 def read_numeric_questions_from_csv(csv_file_path):
     """
     Reads a CSV where each row has:
@@ -209,38 +229,50 @@ def generate_expanded_quiz_numeric(csv_file_path, N):
 
 def write_expanded_numeric_questions_to_csv(expanded_questions, output_file_path):
     """
-    Writes the expanded questions to a CSV with columns:
-      question, answer_1, ..., answer_M, correct_answer (in the last column).
+    Creates a CSV:
+      - 'question' in column 1
+      - columns A, B, C, ..., for each numeric answer
+      - 'correct_answer' in the last column, containing the label of the correct answer's column.
     """
     import csv
-
-    max_answers = max(len(item['answers']) for item in expanded_questions)
     
-    # We want "question", then answer_1..answer_k, then correct_answer
-    fieldnames = (
-        ["question"] +
-        [f"answer_{i+1}" for i in range(max_answers)] +
-        ["correct_answer"]
-    )
+    max_answers = max((len(q['answers']) for q in expanded_questions), default=0)
+    
+    # Generate column labels for up to max_answers
+    labels = generate_labels(max_answers)  # e.g. ["A","B","C","D","E","F"] if max_answers=6
+    
+    # Fieldnames: question, then those labels, then correct_answer
+    fieldnames = ["question"] + labels + ["correct_answer"]
     
     with open(output_file_path, mode='w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         
         for item in expanded_questions:
-            row_data = {"question": item["question"]}
+            row_data = {}
+            row_data["question"] = item["question"]
             
-            # Fill answers
-            for i, ans in enumerate(item["answers"]):
-                row_data[f"answer_{i+1}"] = ans
+            # We'll assume 'answers' is a list of numeric strings,
+            # and 'correct_answer' is the correct numeric string.
+            answers = item["answers"]
+            correct_str = item["correct_answer"]
             
-            # Then correct in last column
-            row_data["correct_answer"] = item["correct_answer"]
+            # Fill columns for each answer
+            for i, ans_val in enumerate(answers):
+                row_data[labels[i]] = ans_val
+            
+            # Identify the correct answer's index
+            if correct_str in answers:
+                idx_correct = answers.index(correct_str)
+                row_data["correct_answer"] = labels[idx_correct]
+            else:
+                row_data["correct_answer"] = ""
+            
             writer.writerow(row_data)
 
 def main():
     input_csv = 'Physics Test Questions.csv'
-    output_csv = '10v1.csv'
+    output_csv = '10v1_alpha.csv'
     desired_num_answers = 10  # for example
     
     expanded_data = generate_expanded_quiz_numeric(input_csv, desired_num_answers)
@@ -253,5 +285,5 @@ if __name__ == "__main__":
 #places available within the sampling bounds. This produces distractors that all have
 #decimal places, but where the correct answer option does not have matching decimal places.
 #The test which may be interesting is to see if a model can pick out this feature to select
-#the right answer. The option labels are numerical.
+#the right answer. The option labels are alphabetical.
 
