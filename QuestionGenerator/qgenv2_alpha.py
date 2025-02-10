@@ -214,6 +214,7 @@ def generate_uniform_distractors(
             if expansions_done == max_expansions:
                 raise ValueError(
                     f"Could not generate {needed} unique distractors after {expansions_done} expansions."
+                    f"Options are: {original_options}"
                 )
     
     final_list_floats = list(distractors_floats)[:needed]
@@ -359,8 +360,8 @@ def write_zero_answer_questions_to_csv(zero_answer_data, output_file_path):
 
 def main():
     input_csv = 'Physics Test Questions.csv'
-    output_csv = '100v2_alp.csv'
-    desired_num_answers = 100  # example: 10 answer options
+    output_csv = 'Mod_MMLU4.csv'
+    desired_num_answers = 4  # example: 10 answer options
     
     if desired_num_answers == 0:
         expanded_data = generate_zero_answer_questions(input_csv)

@@ -118,10 +118,10 @@ def custom_multiple_choice(template: str = None, cot: bool = True):
         if template is None:
             prompt = (
                 f"Question: {question}\n\n"
-                f"Choices:\n{formatted_choices}\n\n"
                 "Please provide your reasoning step-by-step. At the end, on a new line, output your final answer in the following format:\n"
                 "Chain-of-thought:\n<your reasoning here>\nANSWER: <option label>\n"
-                "Note: The final answer must be exactly one of the provided option labels."
+                "Note: The final answer must be exactly one of the provided option labels.\n"
+                f"Choices:\n{formatted_choices}\n"
             )
         else:
             prompt = template.format(question=question, choices=formatted_choices)
@@ -141,12 +141,11 @@ def custom_mc_csv_eval():
       - Uses our custom multiple-choice solver that labels options based on the CSV header.
       - Grades the answer using our custom scorer that extracts the chain-of-thought.
     """
-    dataset = csv_dataset("100v2_alp.csv", sample_fields=record_to_sample)
+    dataset = csv_dataset("Mod_MMLU4.csv", sample_fields=record_to_sample)
     
     return Task(
         dataset=dataset,
         solver=[
-            chain_of_thought(),  # (Optional) Additional chain-of-thought prompt component.
             custom_multiple_choice(cot=True)
         ],
         scorer=choice_with_cot()
