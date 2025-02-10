@@ -359,8 +359,8 @@ def write_zero_answer_questions_to_csv(zero_answer_data, output_file_path):
 
 def main():
     input_csv = 'Physics Test Questions.csv'
-    output_csv = '26v2_alp.csv'
-    desired_num_answers = 26  # example: 10 answer options
+    output_csv = '100v2_alp.csv'
+    desired_num_answers = 100  # example: 10 answer options
     
     if desired_num_answers == 0:
         expanded_data = generate_zero_answer_questions(input_csv)
