@@ -358,10 +358,10 @@ def write_zero_answer_questions_to_csv(zero_answer_data, output_file_path):
                 "CorrectAnswer": item["correct_answer"]
             })
 
-def main():
-    input_csv = 'Physics Test Questions.csv'
-    output_csv = 'Mod_MMLU4.csv'
-    desired_num_answers = 4  # example: 10 answer options
+def modq(csv_file_path: str, num_answers: int):
+    input_csv = csv_file_path
+    output_csv = 'Mod_MMLU' + f'{num_answers}' + '.csv'
+    desired_num_answers = num_answers  # example: 10 answer options
     
     if desired_num_answers == 0:
         expanded_data = generate_zero_answer_questions(input_csv)
@@ -370,5 +370,7 @@ def main():
         expanded_data = generate_expanded_quiz_numeric(input_csv, desired_num_answers)
         write_expanded_numeric_questions_to_csv(expanded_data, output_csv)
 
-if __name__ == "__main__":
-    main()
+    return output_csv
+
+#if __name__ == "__main__":
+#    modq('Physics Test Questions.csv', 4)

@@ -115,14 +115,8 @@ def custom_multiple_choice_no_cot(template: str = None):
 
 # -------------------------------------------------------------------------------
 @task
-def custom_mc_no_cot_eval():
-    """
-    Define a task that:
-      - Loads multiple-choice questions from a CSV file.
-      - Uses our custom solver (without chain-of-thought) to present the question and choices.
-      - Grades the final answer using our simple scorer.
-    """
-    dataset = csv_dataset("Mod_MMLU4.csv", sample_fields=record_to_sample)
+def custom_mc_no_cot_eval(csv_file_path: str):
+    dataset = csv_dataset(csv_file_path, sample_fields=record_to_sample)
     return Task(
         dataset=dataset,
         solver=[ custom_multiple_choice_no_cot() ],
@@ -130,5 +124,5 @@ def custom_mc_no_cot_eval():
     )
 
 # -------------------------------------------------------------------------------
-if __name__ == "__main__":
-    eval(custom_mc_no_cot_eval(), model="google/gemini-1.5-flash")
+#if __name__ == "__main__":
+#    eval(custom_mc_no_cot_eval("Mod_MMLU4.csv"), model="google/gemini-1.5-flash")

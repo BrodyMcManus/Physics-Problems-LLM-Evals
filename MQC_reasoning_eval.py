@@ -133,7 +133,7 @@ def custom_multiple_choice(template: str = None, cot: bool = True):
 
 # -------------------------------------------------------------------------------
 @task
-def custom_mc_csv_eval():
+def custom_mc_csv_eval(csv_file_path: str):
     """
     Define a task that:
       - Loads multiple-choice questions from a CSV file.
@@ -141,7 +141,7 @@ def custom_mc_csv_eval():
       - Uses our custom multiple-choice solver that labels options based on the CSV header.
       - Grades the answer using our custom scorer that extracts the chain-of-thought.
     """
-    dataset = csv_dataset("Mod_MMLU4.csv", sample_fields=record_to_sample)
+    dataset = csv_dataset(csv_file_path, sample_fields=record_to_sample)
     
     return Task(
         dataset=dataset,
@@ -152,6 +152,6 @@ def custom_mc_csv_eval():
     )
 
 # -------------------------------------------------------------------------------
-if __name__ == "__main__":
-    # Run the evaluation on the Gemini 1.5 Flash model.
-    eval(custom_mc_csv_eval(), model="google/gemini-1.5-flash")
+#if __name__ == "__main__":
+#    # Run the evaluation on the Gemini 1.5 Flash model.
+#    eval(custom_mc_csv_eval(), model="google/gemini-1.5-flash")

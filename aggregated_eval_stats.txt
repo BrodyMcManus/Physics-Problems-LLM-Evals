@@ -1,0 +1,3 @@
+Number of Evaluations: 2
+Average Accuracy: 0.6111111111111112
+Standard Deviation: 0.07856742013183857
